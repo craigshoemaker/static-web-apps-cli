@@ -24,7 +24,7 @@ Using `npm` or `yarn`:
   ```bash
   npm install -g @azure/static-web-apps-cli
   ```
-- Open a SWA app folder at the root (outside any /api or /app folders):
+- Open a SWA app folder at the root (outside any _/api_ or _/app_ folders):
   ```bash
   cd my-awesome-swa-app
   ```
@@ -34,11 +34,12 @@ Using `npm` or `yarn`:
   ```
 - Access your SWA app from `http://localhost:4280`
 
-> Note: The cli can also be installed locally as a devDependency: `npm install -D @azure/static-web-apps-cli`
+> **Note**: You can install the CLI locally as a `devDependency` using the following command:
+> `npm install -D @azure/static-web-apps-cli`
 
 Using `npx`:
 
-- Open a SWA app folder at the root (outside any /api or /app folders): `cd my-awesome-swa-app`
+- Open a SWA app folder at the root (outside any _/api_ or _/app_ folders): `cd my-awesome-swa-app`
 - Start the emulator: `npx @azure/static-web-apps-cli start`
 - Access your SWA app from `http://localhost:4280`
 
@@ -60,14 +61,14 @@ swa start ./my-dist
 
 ### Serve from a dev server
 
-When developing your frontend app locally, it's often useful to use the dev server that comes with your frontend framework's CLI to serve your app content. Using the framework CLI allows you to use built-in features like the livereload and HMR (hot module replacement).
+When developing your front end app locally, it's often useful to use the dev server that comes with your front end framework's CLI to serve your app content. Using the framework CLI allows you to use built-in features like the live reload and HMR (hot module replacement).
 
 To use SWA CLI with your local dev server, follow these two steps:
 
-1. Start your local dev server (as usual). For example, if you are using Angular: `ng serve`
-1. In a separate terminal, run `swa start` with the URI provided by the dev server, in the following format:
+1. Start your local dev server (as usual). For example, if you are using Angular: `ng serve`.
+1. In a separate terminal, run `swa start` with the URI provided by the dev server in the following format:
    ```bash
-   swa start http://<APP_DEV_SERVER_HOST>:<APP_DEV_SERVER_PORT>
+   swa start http://<APP-DEV-SERVER-HOST>:<APP-DEV-SERVER-PORT>
    ```
 
 Instead of starting a dev server separately, you can provide the startup command to the CLI.
@@ -109,21 +110,21 @@ npm install -g azure-functions-core-tools@3 --unsafe-perm true
 
 #### Start API server automatically
 
-Run the CLI and provide the folder that contains the API backend (a valid Azure Functions App project):
+Run the CLI and provide the folder that contains the API back end (a valid Azure Functions App project):
 
 ```bash
 # static content plus API
 swa start ./my-dist --api ./api-folder
 
-# frontend dev server plus API
+# front end dev server plus API
 swa start http://localhost:3000 --api ./api-folder
 ```
 
 #### Start API server manually
 
-When developing your backend locally, sometimes it's useful to run Azure Functions Core Tools separately to serve your API. This allows you to use built-in features like debugging and rich editor support.
+When developing your back end locally, sometimes it's useful to run Azure Functions Core Tools separately to serve your API. This allows you to use built-in features like debugging and rich editor support.
 
-To use the CLI with your local API backend dev server, follow these two steps:
+To use the CLI with your local API back end dev server, follow these two steps:
 
 1. Start your API using Azure Functions Core Tools: `func host start` or start debugging in VS Code.
 2. In a separate terminal, run the SWA CLI with the `--api` flag and the URI of the local API server, in the following format:
@@ -142,7 +143,7 @@ If you are serving static files from a folder, the CLI will search this folder f
 swa start ./my-dist
 ```
 
-If you are using a frontend dev server, the CLI will search the current directory for `staticwebapp.config.json`.
+If you are using a front end dev server, the CLI will search the current directory for `staticwebapp.config.json`.
 
 ```bash
 # current working directory is searched for staticwebapp.config.json
@@ -155,7 +156,7 @@ To control where the CLI searches for `staticwebapp.config.json`, use `--swa-con
 # static files
 swa start ./my-dist --swa-config-location ./my-app-source
 
-# frontend dev server
+# front end dev server
 swa start http://localhost:3000 --swa-config-location ./my-app-source
 ```
 
@@ -182,11 +183,11 @@ The CLI allows you to mock and read authentication and authorization credentials
 
 ### Mocking credentials
 
-When requesting the Static Web Apps login endpoints (`http://localhost:4280/.auth/login/<PROVIDER_NAME>`), you have access to a local authentication UI. This interface is served locally from the emulator and allows you to set fake user information for the current user from the provider supplied.
+When requesting the Static Web Apps login endpoints (`http://localhost:4280/.auth/login/<PROVIDER-NAME>`), you have access to a local authentication UI. This interface is served locally from the emulator and allows you to set fake user information for the current user from the provider supplied.
 
 ### Reading credentials
 
-The frontend application can request the `http://localhost:4280/.auth/me` endpoint and a `clientPrincipal` containing the fake information will be returned by the authentication API.
+The front end application can request the `http://localhost:4280/.auth/me` endpoint and a `clientPrincipal` containing the fake information will be returned by the authentication API.
 
 Here is an example:
 
@@ -195,7 +196,7 @@ Here is an example:
   "clientPrincipal": {
     "identityProvider": "twitter",
     "userId": "<USER-UUID>",
-    "userDetails": "<USER_NAME>",
+    "userDetails": "<USER-NAME>",
     "userRoles": ["anonymous", "authenticated"]
   }
 }
@@ -211,13 +212,13 @@ See [Accessing user information](https://docs.microsoft.com/azure/static-web-app
 
 The SWA CLI is built on top of the following components:
 
-- A **Reverse Proxy** is the heart of the SWA CLI; it's the piece that forwards all HTTP requests to the appropriate components:
+- A **reverse proxy** is the heart of the SWA CLI; it's the piece that forwards all HTTP requests to the appropriate components:
   - `/.auth/**` requests are forwarded to the Auth emulator server.
   - `/api/**` requests are forwarded to the localhost API function (if available).
   - `/**` all other requests are forwarded to the static assets server (serving the front-end app).
-- The **Auth emulator server** emulates the whole authentication flow.
-- The **Static content server** serves the local app static content.
-- The **Serverless API server** is served by Azure Functions Core Tools.
+- The **auth emulator server** emulates the whole authentication flow.
+- The **static content server** serves the local app static content.
+- The **serverless API server** is served by Azure Functions Core Tools.
 
 ## Want to help? [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/azure/static-web-apps-cli/issues)
 
