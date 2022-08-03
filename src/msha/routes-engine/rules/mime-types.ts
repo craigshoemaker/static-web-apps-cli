@@ -4,7 +4,7 @@ import path from "path";
 import { logger } from "../../../core";
 import { DEFAULT_MIME_TYPE, MIME_TYPE_LIST } from "../../../core/constants";
 
-// See: https://docs.microsoft.com/en-us/azure/static-web-apps/configuration
+// See: https://docs.microsoft.com/azure/static-web-apps/configuration
 export async function mimeTypes(req: http.IncomingMessage, res: http.ServerResponse, mimeTypes: SWAConfigFileMimeTypes) {
   if (req.url?.includes(".")) {
     logger.silly(`checking mimeTypes rule`);
@@ -25,6 +25,7 @@ export function getMimeTypeForExtension(filePathFromRequest: string | URL | null
   const extension = path.extname(filePathFromRequest!);
 
   logger.silly(`checking mime types`);
+  logger.silly(` - filePathFromRequest: ${chalk.yellow(filePathFromRequest)}`);
   logger.silly(` - extension: ${chalk.yellow(extension || "<empty>")}`);
 
   let mimeType = MIME_TYPE_LIST[extension] || DEFAULT_MIME_TYPE;

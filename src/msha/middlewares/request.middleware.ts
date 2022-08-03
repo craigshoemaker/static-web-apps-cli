@@ -8,7 +8,7 @@ import path from "path";
 import serveStatic from "serve-static";
 import { DEFAULT_CONFIG } from "../../config";
 import { findSWAConfigFile, logger, logRequest } from "../../core";
-import { AUTH_STATUS, IS_APP_DEV_SERVER, SWA_CLI_OUTPUT_LOCATION, SWA_PUBLIC_DIR } from "../../core/constants";
+import { AUTH_STATUS, CUSTOM_URL_SCHEME, IS_APP_DEV_SERVER, SWA_PUBLIC_DIR } from "../../core/constants";
 import { getAuthBlockResponse, handleAuthRequest, isAuthRequest, isLoginRequest, isLogoutRequest } from "../handlers/auth.handler";
 import { handleErrorPage } from "../handlers/error-page.handler";
 import { isFunctionRequest } from "../handlers/function.handler";
@@ -23,7 +23,7 @@ import { getResponse } from "./response.middleware";
  * @param target The HTTP host target.
  * @returns A callback function including an Error object.
  */
-export function onConnectionLost(req: http.IncomingMessage, res: http.ServerResponse | net.Socket, target: string, prefix = "") {
+export function onConnectionLost(req: http.IncomingMessage, res: http.ServerResponse | net.Socket, target: string | undefined, prefix = "") {
   prefix = prefix === "" ? prefix : ` ${prefix} `;
   return (error: Error) => {
     if (error.message.includes("ECONNREFUSED")) {
@@ -44,39 +44,19 @@ export function onConnectionLost(req: http.IncomingMessage, res: http.ServerResp
  * @param appLocation The location of the application code, where the application configuration file is located.
  * @returns The JSON content of the application configuration file defined in the `staticwebapp.config.json` file (or legacy file `routes.json`).
  * If no configuration file is found, returns `undefined`.
- * @see https://docs.microsoft.com/en-us/azure/static-web-apps/configuration
+ * @see https://docs.microsoft.com/azure/static-web-apps/configuration
  */
-export async function handleUserConfig(appLocation: string): Promise<SWAConfigFile | undefined> {
-  if (!fs.existsSync(appLocation)) {
+export async function handleUserConfig(appLocation: string | undefined): Promise<SWAConfigFile | undefined> {
+  if (!appLocation || !fs.existsSync(appLocation)) {
     return;
   }
 
-  const configFile = await findSWAConfigFile(appLocation);
-  if (!configFile) {
+  const runtimeConfigContent = await findSWAConfigFile(appLocation);
+  if (!runtimeConfigContent) {
     return;
   }
 
-  let configJson: SWAConfigFile | undefined;
-  try {
-    configJson = require(configFile.file) as SWAConfigFile;
-    configJson.isLegacyConfigFile = configFile.isLegacyConfigFile;
-
-    logger.info(`\nFound configuration file:\n    ${chalk.green(configFile.file)}`);
-
-    if (configFile.isLegacyConfigFile) {
-      logger.info(
-        `    ${chalk.yellow(`WARNING: Functionality defined in the routes.json file is now deprecated`)}\n` +
-          `    ${chalk.yellow(`Read more: https://docs.microsoft.com/azure/static-web-apps/configuration#routes`)}`
-      );
-    }
-
-    return configJson;
-  } catch (error) {
-    logger.silly(`${chalk.red("configuration file is invalid!")}`);
-    logger.silly(`${chalk.red(error.toString())}`);
-  }
-
-  return configJson;
+  return runtimeConfigContent.content;
 }
 
 /**
@@ -86,7 +66,7 @@ export async function handleUserConfig(appLocation: string): Promise<SWAConfigFi
  * @param proxyApp An `http-proxy` instance.
  * @param target The root folder of the static app (ie. `output_location`). Or, the HTTP host target, if connecting to a dev server, or
  */
-function serveStaticOrProxyReponse(req: http.IncomingMessage, res: http.ServerResponse, proxyApp: httpProxy, target: string) {
+function serveStaticOrProxyResponse(req: http.IncomingMessage, res: http.ServerResponse, proxyApp: httpProxy, target: string | undefined) {
   if ([301, 302].includes(res.statusCode)) {
     res.end();
     return;
@@ -99,8 +79,8 @@ function serveStaticOrProxyReponse(req: http.IncomingMessage, res: http.ServerRe
 
     logger.silly(`custom page or index.html detected`);
     // extract user custom page filename
-    req.url = req.url?.replace(DEFAULT_CONFIG.customUrlScheme!, "");
-    target = SWA_CLI_OUTPUT_LOCATION;
+    req.url = req.url?.replace(CUSTOM_URL_SCHEME, "");
+    target = DEFAULT_CONFIG.outputLocation;
 
     logger.silly(` - url: ${chalk.yellow(req.url)}`);
     logger.silly(` - statusCode: ${chalk.yellow(res.statusCode)}`);
@@ -116,7 +96,7 @@ function serveStaticOrProxyReponse(req: http.IncomingMessage, res: http.ServerRe
     logger.silly(` - url: ${chalk.yellow(req.url)}`);
     logger.silly(` - code: ${chalk.yellow(res.statusCode)}`);
 
-    target = SWA_CLI_OUTPUT_LOCATION;
+    target = DEFAULT_CONFIG.outputLocation;
     logRequest(req, target);
 
     proxyApp.web(
@@ -137,19 +117,22 @@ function serveStaticOrProxyReponse(req: http.IncomingMessage, res: http.ServerRe
   } else {
     // not a dev server
 
-    // run one last check beforing serving the page:
-    // if the requested file is not foud on disk
+    // run one last check before serving the page:
+    // if the requested file is not found on disk
     // send our SWA 404 default page instead of serve-static's one.
 
     let file = null;
-    target = SWA_CLI_OUTPUT_LOCATION;
+    let fileInOutputLocation = null;
+    let existsInOutputLocation = false;
+    target = DEFAULT_CONFIG.outputLocation as string;
 
-    const fileInOutputLocation = path.join(target, req.url!);
-    const existsInOutputLocation = fs.existsSync(fileInOutputLocation);
-
-    logger.silly(`checking if file exists in user's output location`);
-    logger.silly(` - file: ${chalk.yellow(fileInOutputLocation)}`);
-    logger.silly(` - exists: ${chalk.yellow(existsInOutputLocation)}`);
+    if (target) {
+      fileInOutputLocation = path.join(target, req.url!);
+      existsInOutputLocation = fs.existsSync(fileInOutputLocation);
+      logger.silly(`checking if file exists in user's output location`);
+      logger.silly(` - file: ${chalk.yellow(fileInOutputLocation)}`);
+      logger.silly(` - exists: ${chalk.yellow(existsInOutputLocation)}`);
+    }
 
     if (existsInOutputLocation === false) {
       // file doesn't exist in the user's `outputLocation`
@@ -225,10 +208,10 @@ export async function requestMiddleware(
 
   if (isWebsocketRequest(req)) {
     logger.silly(`websocket request detected`);
-    return serveStaticOrProxyReponse(req, res, proxyApp, SWA_CLI_OUTPUT_LOCATION);
+    return serveStaticOrProxyResponse(req, res, proxyApp, DEFAULT_CONFIG.outputLocation);
   }
 
-  let target = SWA_CLI_OUTPUT_LOCATION;
+  let target = DEFAULT_CONFIG.outputLocation;
 
   logger.silly(`checking for matching route`);
   const matchingRouteRule = tryGetMatchingRoute(req, userConfig);
@@ -240,7 +223,7 @@ export async function requestMiddleware(
       logger.silly(` - ${statusCodeToServe} code detected. Exit`);
 
       handleErrorPage(req, res, statusCodeToServe, userConfig?.responseOverrides);
-      return serveStaticOrProxyReponse(req, res, proxyApp, target);
+      return serveStaticOrProxyResponse(req, res, proxyApp, target);
     }
   }
 
@@ -268,32 +251,32 @@ export async function requestMiddleware(
 
   logger.silly(`checking for query params`);
 
-  const { matchingRewriteRoutePath, sanitizedUrl, matchingRewriteRoute } = parseQueryParams(req, matchingRouteRule);
+  const { urlPathnameWithoutQueryParams, url, urlPathnameWithQueryParams } = parseQueryParams(req, matchingRouteRule);
 
   logger.silly(`checking rewrite auth login request`);
-  if (matchingRewriteRoute && isLoginRequest(matchingRewriteRoutePath)) {
+  if (urlPathnameWithQueryParams && isLoginRequest(urlPathnameWithoutQueryParams)) {
     logger.silly(` - auth login dectected`);
 
     authStatus = AUTH_STATUS.HostNameAuthLogin;
-    req.url = sanitizedUrl.toString();
+    req.url = url.toString();
     return await handleAuthRequest(req, res, matchingRouteRule, userConfig);
   }
 
   logger.silly(`checking rewrite auth logout request`);
-  if (matchingRewriteRoute && isLogoutRequest(matchingRewriteRoutePath)) {
+  if (urlPathnameWithQueryParams && isLogoutRequest(urlPathnameWithoutQueryParams)) {
     logger.silly(` - auth logout dectected`);
 
     authStatus = AUTH_STATUS.HostNameAuthLogout;
-    req.url = sanitizedUrl.toString();
+    req.url = url.toString();
     return await handleAuthRequest(req, res, matchingRouteRule, userConfig);
   }
 
   if (!isRouteRequiringUserRolesCheck(req, matchingRouteRule, isFunctionReq, authStatus)) {
     handleErrorPage(req, res, 401, userConfig?.responseOverrides);
-    return serveStaticOrProxyReponse(req, res, proxyApp, target);
+    return serveStaticOrProxyResponse(req, res, proxyApp, target);
   }
 
-  if (authStatus != AUTH_STATUS.NoAuth && (authStatus != AUTH_STATUS.HostNameAuthLogin || !matchingRewriteRoute)) {
+  if (authStatus != AUTH_STATUS.NoAuth && (authStatus != AUTH_STATUS.HostNameAuthLogin || !urlPathnameWithQueryParams)) {
     if (authStatus == AUTH_STATUS.HostNameAuthLogin && matchingRouteRule) {
       return getAuthBlockResponse(req, res, userConfig, matchingRouteRule);
     }
@@ -301,12 +284,10 @@ export async function requestMiddleware(
     return await handleAuthRequest(req, res, matchingRouteRule, userConfig);
   }
 
-  getResponse(req, res, matchingRouteRule, userConfig, isFunctionReq);
-
-  if (!isFunctionReq) {
+  if (!getResponse(req, res, matchingRouteRule, userConfig, isFunctionReq)) {
     logger.silly(` - url: ${chalk.yellow(req.url)}`);
     logger.silly(` - target: ${chalk.yellow(target)}`);
 
-    serveStaticOrProxyReponse(req, res, proxyApp, target);
+    serveStaticOrProxyResponse(req, res, proxyApp, target);
   }
 }

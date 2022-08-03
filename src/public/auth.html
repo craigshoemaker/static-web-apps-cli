@@ -55,7 +55,12 @@
           <div class="text-center"><img src=https://appservice.azureedge.net/images/static-apps/v3/staticapps.svg /></div>
         </div>
         <div
-          class="extra-pl-small-scr offset-xl-1 offset-lg-1 offset-md-2 offset-sm-2 offset-xs-4 col-xl-5 col-lg-5 col-md-10 col-sm-11 col-xs-11 div-vertical-center"
+          class="
+            extra-pl-small-scr
+            offset-xl-1 offset-lg-1 offset-md-2 offset-sm-2 offset-xs-4
+            col-xl-5 col-lg-5 col-md-10 col-sm-11 col-xs-11
+            div-vertical-center
+          "
         >
           <div class="container-fluid">
             <h1 class="pb-4">Azure Static Web Apps Auth</h1>
@@ -68,7 +73,7 @@
                     id="identityProvider"
                     name="identityProvider"
                     list="providers-list"
-                    placeholder="Choose a login provider"
+                    placeholder="Choose an auth provider"
                     type="text"
                     required="required"
                     class="form-control"
@@ -120,12 +125,32 @@
               </div>
 
               <div class="form-group row">
-                <label for="userRoles" class="col-4 col-form-label">User’s roles</label>
+                <label for="userRoles" class="col-4 col-form-label">User's roles</label>
                 <div class="col-8">
-                  <textarea id="userRoles" name="userRoles" cols="40" rows="5" class="form-control" aria-describedby="userRolesHelpBlock"></textarea>
+                  <textarea id="userRoles" name="userRoles" cols="40" rows="3" class="form-control" aria-describedby="userRolesHelpBlock"></textarea>
                   <small id="userRolesHelpBlock" class="form-text text-muted">Roles used during authorization. One role per line.</small>
                   <small id="userRolesHelpBlock" class="form-text text-muted"
                     >Note: roles "authenticated" and "anonymous" will be added automatically if not provided.</small
+                  >
+                </div>
+              </div>
+
+              <div class="form-group row">
+                <label for="claims" class="col-4 col-form-label">User's claims</label>
+                <div class="col-8">
+                  <textarea
+                    id="claims"
+                    name="claims"
+                    cols="40"
+                    rows="3"
+                    class="form-control"
+                    aria-describedby="userClaimsHelpBlock"
+                    placeholder="[{'typ': 'name','val': 'Azure Static Web Apps'}]"
+                  ></textarea>
+                  <small id="userClaimsHelpBlockError" class="d-none form-text text-muted alert alert-danger">Invalid JSON value!</small>
+                  <small id="userClaimsHelpBlock" class="form-text text-muted"
+                    >Claims from the identity provider. JSON array of claims. See
+                    <a href="https://docs.microsoft.com/azure/static-web-apps/user-information">documentation</a> for example claims.</small
                   >
                 </div>
               </div>
@@ -157,11 +182,14 @@
           <li><a href="https://www.microsoft.com/legal/intellectualproperty/copyright">Terms of Use</a></li>
         </ul>
       </nav>
-      <div class="copyright">© Microsoft 2021</div>
+      <div class="copyright">© Microsoft 2022</div>
     </footer>
     <script src="https://ajax.aspnetcdn.com/ajax/jquery/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
     <script src="https://ajax.aspnetcdn.com/ajax/bootstrap/4.1.1/bootstrap.min.js" crossorigin="anonymous"></script>
     <script>
+      const defaultRoles = ["anonymous", "authenticated"];
+      const defaultClaims = "[]"; // this should be a valid JSON string
+
       function saveCookie(formElement) {
         const data = localStorage[hashStorageKey(formElement)];
         document.cookie = `StaticWebAppsAuthCookie=${btoa(data)}; path=/`;
@@ -229,7 +257,20 @@
           const inputValue = element.val();
           let data = JSON.parse(localStorage[storageKey]);
           if (inputName === "userRoles") {
-            data[inputName] = inputValue.trim().split("\n");
+            // ensure default roles are included
+            data[inputName] = [...new Set([...inputValue.trim().split("\n"), ...defaultRoles])];
+          } else if (inputName === "claims") {
+            const claimsErrorBlock = $("#userClaimsHelpBlockError");
+            const formSubmitBtn = $("#submit");
+            try {
+              claimsErrorBlock.addClass("d-none");
+              formSubmitBtn.prop("disabled", false);
+              data[inputName] = JSON.parse(inputValue);
+            } catch (error) {
+              claimsErrorBlock.removeClass("d-none");
+              formSubmitBtn.prop("disabled", true);
+              data[inputName] = JSON.parse(defaultClaims);
+            }
           } else {
             data[inputName] = inputValue;
           }
@@ -262,8 +303,9 @@
             const input = $(this);
             const inputName = input.attr("name");
             if (inputName === "userRoles") {
-              if (Array.isArray(data[inputName])) {
-                input.val(data[inputName].join("\n"));
+              const userRoles = data[inputName];
+              if (Array.isArray(userRoles)) {
+                input.val(userRoles.join("\n"));
               } else if (input.val() === "") {
                 // set default values and cache entry
                 input.val(settings.defaultRoles.join("\n"));
@@ -276,6 +318,15 @@
               const userId = data[inputName] || generateUserId();
               input.val(userId);
               input.saveToLocalStorage();
+            } else if (inputName === "claims") {
+              const userClaims = data[inputName];
+              if (Array.isArray(userClaims)) {
+                input.val(JSON.stringify(userClaims, null, 2));
+              } else if (!userClaims || input.val() === "") {
+                // set default values and cache entry
+                input.val(settings.defaultClaims);
+                input.saveToLocalStorage();
+              }
             } else if (input.attr("type") !== "submit") {
               const value = data[inputName];
               input.val(value);
@@ -287,12 +338,12 @@
     <script>
       $(function () {
         // setup default values
-        const defaultRoles = ["anonymous", "authenticated"];
         const form = $("form[name='auth']");
 
         // trigger on first call
         form.syncFromLocalStorage({
           defaultRoles,
+          defaultClaims,
         });
 
         // get default provider name from URL
@@ -304,7 +355,8 @@
         // clear form
         $("#clear").click(() => {
           form.find("input[type=text]:not(#identityProvider)").val("");
-          form.find("textarea").val(defaultRoles.join("\n"));
+          form.find("textarea#userRoles").val(defaultRoles.join("\n"));
+          form.find("textarea#claims").val(defaultClaims);
           form.find("#userId").val(generateUserId());
           form.find("input, textarea").each((idx, element) => $(element).saveToLocalStorage());
         });

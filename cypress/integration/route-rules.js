@@ -1,5 +1,9 @@
 /// <reference types="cypress" />
 
+Cypress.Screenshot.defaults({
+  screenshotOnRunFailure: false,
+});
+
 context("route rules engine", { failOnStatusCode: false, defaultCommandTimeout: 20000 /* set this for Windows */ }, () => {
   it("root returns /index.html", () => {
     cy.visit("http://0.0.0.0:1234/").should(() => {
@@ -13,9 +17,21 @@ context("route rules engine", { failOnStatusCode: false, defaultCommandTimeout: 
     });
   });
 
+  it("'/with space.html' returns '/with space.html'", () => {
+    cy.visit("http://0.0.0.0:1234/with space.html").should(() => {
+      cy.title().should("eq", "/with space.html");
+    });
+  });
+
   it("folder returns folder/index.html", () => {
     cy.visit("http://0.0.0.0:1234/folder/").should(() => {
       cy.title().should("eq", "/folder/index.html");
+    });
+  });
+
+  it("folder '/another folder' returns '/another folder/index.html'", () => {
+    cy.visit("http://0.0.0.0:1234/another folder/index.html").should(() => {
+      cy.title().should("eq", "/another folder/index.html");
     });
   });
 
@@ -46,7 +62,6 @@ context("route rules engine", { failOnStatusCode: false, defaultCommandTimeout: 
 
   it("default redirect returns 302 with correct location", () => {
     cy.request("http://0.0.0.0:1234/redirect/foo").should((response) => {
-      console.log(response);
       expect(response.redirects[0]).to.eq("302: http://0.0.0.0:1234/index2.html");
     });
   });
@@ -82,6 +97,12 @@ context("route rules engine", { failOnStatusCode: false, defaultCommandTimeout: 
   it("/*.foo matches extension", () => {
     cy.request("http://0.0.0.0:1234/thing.foo").should((response) => {
       expect(response.redirects[0]).to.eq("302: http://0.0.0.0:1234/foo.html");
+    });
+  });
+
+  it("/redirect/*/invalid should not matched (invalid wildcard position)", () => {
+    cy.request("http://0.0.0.0:1234/redirect/foo/invalid").should((response) => {
+      expect(response.status).to.eq(200);
     });
   });
 
@@ -127,14 +148,16 @@ context("route rules engine", { failOnStatusCode: false, defaultCommandTimeout: 
   });
 
   it("should parse and ignore query params", () => {
-    cy.request({ url: "http://0.0.0.0:1234/index.html?key=value", failOnStatusCode: false }).should((response) => {
+    cy.request({ url: "http://0.0.0.0:1234/index.html?key=value&foo=bar", failOnStatusCode: false }).should((response) => {
       expect(response.status).to.eq(200);
+      expect(response.body).to.include("/index.html");
     });
   });
 
   it("should parse and ignore query params (when rule has wildcard)", () => {
-    cy.request({ url: "http://0.0.0.0:1234/folder/index.html?key=value", failOnStatusCode: false }).should((response) => {
+    cy.request({ url: "http://0.0.0.0:1234/folder/index.html?key=value&foo=bar", failOnStatusCode: false }).should((response) => {
       expect(response.status).to.eq(200);
+      expect(response.body).to.include("/index.html");
     });
   });
 });

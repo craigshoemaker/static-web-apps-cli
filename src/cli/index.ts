@@ -1,88 +1,136 @@
-import program, { Option } from "commander";
+import dotenv from "dotenv";
+dotenv.config();
+
+import process from "process";
+import chalk from "chalk";
+import { Command, Option, program } from "commander";
 import path from "path";
+import updateNotifier from "update-notifier";
 import { DEFAULT_CONFIG } from "../config";
-import { parsePort } from "../core";
-import { start } from "./commands/start";
+import { configureOptions, getCurrentSwaCliConfigFromFile, getNodeMajorVersion, logger, runCommand, swaCliConfigFilename } from "../core";
+import registerDeploy from "./commands/deploy";
+import registerInit from "./commands/init";
+import registerLogin from "./commands/login";
+import registerStart from "./commands/start";
+import registerBuild from "./commands/build";
+import registerDocs from "./commands/docs";
+import { promptOrUseDefault } from "../core/prompts";
 
-exports.run = async function () {
-  const cli: SWACLIConfig & program.Command = program
-    .name("swa")
-    .usage("<command> [options]")
-    .version(require("../../package.json").version, "-v, --version")
+export * from "./commands";
 
-    // SWA config
-    .option("--verbose [prefix]", "enable verbose output. Values are: silly,info,log,silent", DEFAULT_CONFIG.verbose)
+const pkg = require("../../package.json");
 
-    .addHelpText("after", "\nDocumentation:\n  https://aka.ms/swa/cli-local-development\n");
+function printWelcomeMessage(argv?: string[]) {
+  const args = argv?.slice(2) || [];
+  const showVersion = args.includes("--version") || args.includes("-v") || args.includes("--ping");
+  const hideMessage = process.env.SWA_CLI_INTERNAL_COMMAND || showVersion;
+
+  if (!hideMessage) {
+    // don't use logger here: SWA_CLI_DEBUG is not set yet
+    console.log(``);
+    console.log(`Welcome to Azure Static Web Apps CLI (${chalk.green(pkg.version)})`);
+    console.log(``);
+  }
+
+  if (!showVersion) {
+    checkNodeVersion();
+  }
+}
+
+function checkNodeVersion() {
+  const nodeMajorVersion = getNodeMajorVersion();
+  const minVersion = pkg.engines.node.substring(2, pkg.engines.node.indexOf("."));
+
+  if (nodeMajorVersion < minVersion) {
+    logger.error(`You are using Node ${process.versions.node} but this version of the CLI requires Node ${minVersion} or higher.`);
+    logger.error(`Please upgrade your Node version.\n`, true);
+  }
+}
+
+export async function run(argv?: string[]) {
+  printWelcomeMessage(argv);
+
+  // Once a day, check for updates
+  updateNotifier({ pkg }).notify();
 
   program
-    .command("start [context]")
-    .usage("[context] [options]")
-    .description("start the emulator from a directory or bind to a dev server")
-    .option("--app-location <appLocation>", "set location for the static app source code", DEFAULT_CONFIG.appLocation)
-    .option(
-      "--app, --app-artifact-location <outputLocation>",
-      "set the location of the build output directory relative to the --app-location.",
-      DEFAULT_CONFIG.outputLocation
+    .name("swa")
+    .usage("[command] [options]")
+    .version(pkg.version, "-v, --version")
+
+    // SWA CLI common configuration options
+    .addOption(
+      new Option("-V, --verbose [prefix]", "enable verbose output. Values are: silly,info,log,silent")
+        .preset(DEFAULT_CONFIG.verbose)
+        .default(DEFAULT_CONFIG.verbose)
     )
-    .option("--api, --api-location <apiLocation>", "set the API folder or Azure Functions emulator address", DEFAULT_CONFIG.apiLocation)
-    .option(
-      "--swa-config-location <swaConfigLocation>",
-      "set the directory where the staticwebapp.config.json file is found",
-      DEFAULT_CONFIG.swaConfigLocation
-    )
-
-    // CLI config
-    .option<number>("--api-port <apiPort>", "set the API backend port", parsePort, DEFAULT_CONFIG.apiPort)
-    .option("--host <host>", "set the cli host address", DEFAULT_CONFIG.host)
-    .option<number>("--port <port>", "set the cli port", parsePort, DEFAULT_CONFIG.port)
-
-    .addOption(new Option("--build", "build the app and API before starting the emulator").default(false).hideHelp())
-
-    .option("--ssl", "serve the app and API over HTTPS", DEFAULT_CONFIG.ssl)
-    .option("--ssl-cert <sslCertLocation>", "SSL certificate (.crt) to use for serving HTTPS", DEFAULT_CONFIG.sslCert)
-    .option("--ssl-key <sslKeyLocation>", "SSL key (.key) to use for serving HTTPS", DEFAULT_CONFIG.sslKey)
-
-    .option("--run <startupScript>", "run a command at startup", DEFAULT_CONFIG.run)
-
-    .action(async (context: string = `.${path.sep}`, options: SWACLIConfig) => {
-      options = {
-        ...options,
-        verbose: cli.opts().verbose,
-      };
-
-      // make sure the start command gets the right verbosity level
-      process.env.SWA_CLI_DEBUG = options.verbose;
-      if (options.verbose?.includes("silly")) {
-        // when silly level is set,
-        // propagate debugging level to other tools using the DEBUG environment variable
-        process.env.DEBUG = "*";
+    .option("-c, --config <path>", "path to swa-cli.config.json file to use", path.relative(process.cwd(), swaCliConfigFilename))
+    .option("-cn, --config-name <name>", "name of the configuration to use", undefined)
+    .option("-g, --print-config", "print all resolved options", false)
+    .action(async (_options: SWACLIConfig, command: Command) => {
+      if ((_options as any).ping) {
+        try {
+          require("child_process").execSync("npx command-line-pong", { stdio: ["inherit", "inherit", "ignore"] });
+        } catch (e) {
+          console.log("pong!");
+        }
+        return;
       }
 
-      await start(context, options);
+      const options = await configureOptions(undefined, command.optsWithGlobals(), command, "init");
+      swaMagic(options);
     })
-
     .addHelpText(
       "after",
       `
-Examples:
+  Type "swa" to get started and deploy your project.
 
-  Serve static content from a specific folder
-  swa start ./output-folder
-
-  Use an already running framework development server
-  swa start http://localhost:3000
-
-  Use staticwebapp.config.json file in a specific location
-  swa start http://localhost:3000 --swa-config-location ./app-source
-
-  Serve static content and run an API from another folder
-  swa start ./output-folder --api ./api
-
-  Use a custom command to run framework development server at startup
-  swa start http://localhost:3000 --run "npm start"
-    `
+  Documentation:
+    https://aka.ms/swa/cli-local-development
+  `
     );
 
-  await program.parseAsync(process.argv);
-};
+  // Register commands
+  registerLogin(program);
+  registerStart(program);
+  registerDeploy(program);
+  registerInit(program);
+  registerBuild(program);
+  registerDocs(program);
+
+  program.showHelpAfterError();
+  program.addOption(new Option("--ping").hideHelp());
+
+  await program.parseAsync(argv);
+}
+
+export async function swaMagic(_options: SWACLIConfig) {
+  try {
+    const hasLoadedConfig = getCurrentSwaCliConfigFromFile();
+    if (!hasLoadedConfig) {
+      logger.log(`${chalk.cyan("→")} No configuration found, running ${chalk.cyan("swa init")}...\n`);
+      runCommand("swa init");
+    }
+
+    logger.log(`${chalk.cyan("→")} Running ${chalk.cyan("swa build")}...\n`);
+    runCommand("swa build");
+    logger.log("");
+
+    const response = await promptOrUseDefault(false, {
+      type: "confirm",
+      name: "deploy",
+      message: "Do you want to deploy your app now?",
+      initial: true,
+    });
+    if (!response.deploy) {
+      logger.log(`\nWhen you'll be ready to deploy your app, just use ${chalk.cyan("swa")} again.`);
+      return;
+    }
+
+    logger.log(`\n${chalk.cyan("→")} Running ${chalk.cyan("swa deploy")}...\n`);
+    runCommand("swa deploy");
+  } catch (_) {
+    // Pokemon, go catch'em all!
+    // (Errors are already caught an displayed in individual commands)
+  }
+}

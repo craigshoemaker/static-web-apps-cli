@@ -1,11 +1,21 @@
 /// <reference types="cypress" />
 
+Cypress.Screenshot.defaults({
+  screenshotOnRunFailure: false,
+});
+
 const SWA_AUTH_COOKIE_NAME = "StaticWebAppsAuthCookie";
 const clientPrincipal = {
   identityProvider: "facebook",
   userId: "d75b260a64504067bfc5b2905e3b8182",
   userDetails: "user@example.com",
   userRoles: ["authenticated"],
+  claims: [
+    {
+      typ: "name",
+      val: "Azure Static Web Apps",
+    },
+  ],
 };
 
 context("Authorization", () => {
@@ -43,7 +53,6 @@ context("Authorization", () => {
     });
   }
 
-
   describe("Accessing /.auth/login/aad", () => {
     it("should return 404", () => {
       cy.request({ url: "http://0.0.0.0:1234/.auth/login/aad", failOnStatusCode: false }).then((response) => {
@@ -51,5 +60,4 @@ context("Authorization", () => {
       });
     });
   });
-
 });

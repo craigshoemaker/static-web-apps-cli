@@ -1,9 +1,8 @@
-import type http from "http";
 import chalk from "chalk";
-import { DEFAULT_CONFIG } from "../../config";
+import type http from "http";
 import { logger } from "../../core";
-import { AUTH_STATUS, SWA_CLI_APP_PROTOCOL } from "../../core/constants";
-import { globToRegExp } from "../../core/utils/glob";
+import { AUTH_STATUS, CUSTOM_URL_SCHEME, SWA_CLI_APP_PROTOCOL } from "../../core/constants";
+import { globToRegExp, isValidGlobExpression } from "../../core/utils/glob";
 import { getIndexHtml } from "./rules/routes";
 
 export function doesRequestPathMatchRoute(
@@ -46,7 +45,7 @@ export function doesRequestPathMatchRoute(
     return true;
   }
 
-  // Since this is a file request, return now, since tring to get a match by appending /index.html doesn't apply here
+  // Since this is a file request, return now, since we are trying to get a match by appending /index.html doesn't apply here
   if (!route) {
     logger.silly(` - route: ${chalk.yellow(route || "<empty>")}`);
     logger.silly(` - match: ${chalk.yellow(false)}`);
@@ -100,8 +99,14 @@ function doesRequestPathMatchWildcardRoute(requestPath: string, requestPathFileW
   // before processing regexp which might be expensive
   // let's check first if both path and rule start with the same substring
   if (pathBeforeWildcard && requestPath.startsWith(pathBeforeWildcard) === false) {
-    logger.silly(` - substring don't match. Exit`);
+    logger.silly(` - base path doesn't match. Exit`);
 
+    return false;
+  }
+
+  // also, let's check if the route rule doesn't contains a wildcard in the middle of the path
+  if (isValidGlobExpression(requestPathFileWithWildcard) === false) {
+    logger.silly(` - route rule contains a wildcard in the middle of the path. Exit`);
     return false;
   }
 
@@ -117,18 +122,27 @@ function doesRequestPathMatchWildcardRoute(requestPath: string, requestPathFileW
 }
 
 export function isCustomUrl(req: http.IncomingMessage) {
-  return !!req.url?.startsWith(DEFAULT_CONFIG.customUrlScheme!);
+  return !!req.url?.startsWith(CUSTOM_URL_SCHEME);
 }
 
 export function parseQueryParams(req: http.IncomingMessage, matchingRouteRule: SWAConfigFileRoute | undefined) {
-  const matchingRewriteRoute = matchingRouteRule?.rewrite || req.url;
-  const sanitizedUrl = new URL(matchingRewriteRoute!, `${SWA_CLI_APP_PROTOCOL}://${req?.headers?.host}`);
-  const matchingRewriteRouteQueryString = sanitizedUrl.searchParams.toString();
-  const doesMatchingRewriteRouteHaveQueryStringParameters = matchingRewriteRouteQueryString !== "";
-  let matchingRewriteRoutePath = matchingRewriteRoute ? matchingRewriteRoute : undefined;
-  if (doesMatchingRewriteRouteHaveQueryStringParameters) {
-    matchingRewriteRoutePath = sanitizedUrl.pathname;
-    logger.silly(` - query: ${chalk.yellow(matchingRewriteRouteQueryString)}`);
+  const urlPathnameWithQueryParams = matchingRouteRule?.rewrite || req.url;
+  const url = new URL(urlPathnameWithQueryParams!, `${SWA_CLI_APP_PROTOCOL}://${req?.headers?.host}`);
+  const urlQueryString = url.searchParams.toString();
+  const urlPathnameWithoutQueryParams = url.pathname;
+
+  if (urlQueryString !== "") {
+    logger.silly(` - url: ${chalk.yellow(url)}`);
+    logger.silly(` - urlQueryString: ${chalk.yellow(urlQueryString)}`);
+    url.searchParams.forEach((value, key) => {
+      logger.silly(`   - ${key}: ${chalk.yellow(value || "<undefined>")}`);
+    });
+    logger.silly(` - urlPathnameWithQueryParams: ${chalk.yellow(urlPathnameWithQueryParams)}`);
+    logger.silly(` - urlPathnameWithoutQueryParams: ${chalk.yellow(urlPathnameWithoutQueryParams)}`);
   }
-  return { matchingRewriteRoutePath, sanitizedUrl, matchingRewriteRoute };
+  return {
+    url,
+    urlPathnameWithoutQueryParams,
+    urlPathnameWithQueryParams,
+  };
 }

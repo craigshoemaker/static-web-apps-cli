@@ -1,5 +1,8 @@
 /// <reference types="cypress" />
 
+Cypress.Screenshot.defaults({
+  screenshotOnRunFailure: false,
+});
 Cypress.Cookies.defaults({
   domain: "0.0.0.0",
 });
@@ -13,6 +16,12 @@ const clientPrincipal = {
   userId: "d75b260a64504067bfc5b2905e3b8182",
   userDetails: "user@example.com",
   userRoles: ["authenticated"],
+  claims: [
+    {
+      typ: "name",
+      val: "Azure Static Web Apps",
+    },
+  ],
 };
 
 context("Authentication", () => {
@@ -38,7 +47,11 @@ context("Authentication", () => {
 
       cy.request("/.auth/me").should((response) => {
         expect(response.status).to.eq(200);
-        expect(response.body.clientPrincipal).to.deep.eq(clientPrincipal);
+        expect(response.body.clientPrincipal.identityProvider).to.deep.eq(clientPrincipal.identityProvider);
+        expect(response.body.clientPrincipal.userId).to.deep.eq(clientPrincipal.userId);
+        expect(response.body.clientPrincipal.userDetails).to.deep.eq(clientPrincipal.userDetails);
+        expect(response.body.clientPrincipal.userRoles).to.deep.eq(clientPrincipal.userRoles);
+        expect(response.body.clientPrincipal.claims).to.deep.eq(clientPrincipal.claims);
       });
     });
     it("should have authenticated role", () => {
@@ -72,6 +85,10 @@ context(`/.auth/login/<provider>`, () => {
       it("userRoles should contains authenticated and anonymous roles", () => {
         cy.visit(`http://0.0.0.0:1234/.auth/login/${provider}`);
         cy.get("#userRoles").should("have.value", "anonymous\nauthenticated");
+      });
+      it("claims should contains an empty array", () => {
+        cy.visit(`http://0.0.0.0:1234/.auth/login/${provider}`);
+        cy.get("#claims").should("have.value", "[]");
       });
     });
   }
@@ -161,6 +178,7 @@ context("checking localStorage", () => {
             expect(json.identityProvider).to.eq(provider);
             expect(json.userDetails).to.eq(`foobar-${provider}`);
             expect(json.userRoles).to.deep.eq(["anonymous", "authenticated"]);
+            expect(json.claims).to.deep.eq([]);
           });
       });
     }
@@ -183,6 +201,14 @@ context("UI buttons", () => {
       cy.get("#submit").click();
 
       cy.get("#userDetails:invalid").should("exist");
+    });
+
+    it("should not submit if invalid claims JSON value", () => {
+      cy.visit(`http://0.0.0.0:1234/.auth/login/github`);
+      cy.get("#claims").type("*&^%$#@!");
+
+      cy.get("#userClaimsHelpBlockError").should("be.visible");
+      cy.get("#submit").should("be.disabled");
     });
 
     it("should submit and redirect to /", () => {

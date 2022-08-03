@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import type http from "http";
 import { isHttpUrl, isSWAConfigFileUrl, logger } from "../../core";
+import { IS_APP_DEV_SERVER } from "../../core/constants";
 import { handleErrorPage } from "../handlers/error-page.handler";
 import { handleFunctionRequest, isFunctionRequest } from "../handlers/function.handler";
 import {
@@ -9,7 +10,7 @@ import {
   getMimeTypeForExtension,
   isRequestPathExcludedFromNavigationFallback,
   tryFindFileForRequest,
-  updateReponseHeaders,
+  updateResponseHeaders,
 } from "../routes-engine";
 import { parseQueryParams } from "../routes-engine/route-processor";
 
@@ -19,20 +20,21 @@ export function getResponse(
   matchedRoute: SWAConfigFileRoute | undefined,
   userConfig: SWAConfigFile | undefined,
   isFunctionRequest: boolean
-) {
+): boolean {
   const statusCodeToServe = parseInt(`${matchedRoute?.statusCode}`, 10);
   const redirect = matchedRoute?.redirect;
   const rewrite = matchedRoute?.rewrite;
-
   logger.silly(`using userConfig`);
   logger.silly({ userConfig });
 
   if (redirect) {
     logger.silly(` - redirect rule detected. Exit`);
 
-    return applyRedirectResponse(req, res, matchedRoute);
+    applyRedirectResponse(req, res, matchedRoute);
+    return false;
   }
-
+  // We should always set the x-ms-original-url to be the full request URL.
+  req.headers["x-ms-original-url"] = new URL(req.url!, `http://${req.headers.host}`).href;
   if (rewrite) {
     req.url = rewrite;
   }
@@ -40,11 +42,13 @@ export function getResponse(
   if ([403, 401].includes(statusCodeToServe)) {
     logger.silly(` - ${statusCodeToServe} code detected. Exit`);
 
-    return handleErrorPage(req, res, statusCodeToServe, userConfig?.responseOverrides);
+    handleErrorPage(req, res, statusCodeToServe, userConfig?.responseOverrides);
+    return false;
   }
 
   if (isFunctionRequest) {
-    return handleFunctionRequest(req, res);
+    handleFunctionRequest(req, res);
+    return true;
   }
 
   const storageResult = getStorageContent(
@@ -60,12 +64,14 @@ export function getResponse(
   );
 
   if (storageResult.isFunctionFallbackRequest) {
-    return handleFunctionRequest(req, res);
+    req.url = userConfig?.navigationFallback.rewrite!;
+    handleFunctionRequest(req, res);
+    return true;
   }
-
   if (statusCodeToServe) {
     res.statusCode = statusCodeToServe;
   }
+  return false;
 }
 
 export function getStorageContent(
@@ -95,18 +101,30 @@ export function getStorageContent(
     };
   }
 
-  const { matchingRewriteRoutePath } = parseQueryParams(req, matchedRoute);
+  let requestPath = req.url as string;
+  let filePathFromRequest: string | null = null;
+  let decodedRequestPath = req.url;
+  const { urlPathnameWithoutQueryParams } = parseQueryParams(req, matchedRoute);
 
-  let requestPath = matchingRewriteRoutePath;
-  let decodedRequestPath = matchingRewriteRoutePath;
+  // we only process if the user is NOT connecting to a remote dev server.
+  // if the user is connecting to a remote dev server, we skip the following logic.
+  if (IS_APP_DEV_SERVER()) {
+    logger.silly(`remote dev server detected.`);
+    return {
+      isFunctionFallbackRequest: false,
+      isSuccessfulSiteHit: true,
+    };
+  } else {
+    requestPath = urlPathnameWithoutQueryParams;
+    decodedRequestPath = urlPathnameWithoutQueryParams;
 
-  if (pathToServe) {
-    requestPath = pathToServe;
-    decodedRequestPath = decodeURI(pathToServe);
+    if (pathToServe) {
+      requestPath = pathToServe;
+      decodedRequestPath = decodeURI(pathToServe);
+    }
+
+    filePathFromRequest = tryFindFileForRequest(requestPath!);
   }
-
-  let filePathFromRequest = tryFindFileForRequest(requestPath!);
-  logger.silly(` - filePathFromRequest: ${chalk.yellow(filePathFromRequest)}`);
 
   if (!filePathFromRequest) {
     let shouldDisplayNotFoundPage = true;
@@ -180,7 +198,7 @@ export function getStorageContent(
   if (responseOverridesRule) {
     // Handle HEAD request
     if (req.method === "HEAD") {
-      updateReponseHeaders(res, matchingRouteHeaders);
+      updateResponseHeaders(res, matchingRouteHeaders);
 
       res.statusCode = 200;
 
@@ -192,7 +210,7 @@ export function getStorageContent(
 
     // Handle OPTIONS request
     if (req.method === "OPTIONS") {
-      updateReponseHeaders(res, matchingRouteHeaders);
+      updateResponseHeaders(res, matchingRouteHeaders);
 
       const allowStr = "GET, HEAD, OPTIONS";
       res.setHeader("Allow", allowStr);
@@ -206,7 +224,7 @@ export function getStorageContent(
   }
 
   // Handle GET request
-  updateReponseHeaders(res, matchingRouteHeaders);
+  updateResponseHeaders(res, matchingRouteHeaders);
 
   req.url = filePathFromRequest;
 

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
+  "configurations": {
+    "static": {
+      "appLocation": "app",
+      "apiLocation": "api",
+      "outputLocation": ".",
+      "apiBuildCommand": "npm run build --if-present",
+      "port": 1234,
+      "host": "0.0.0.0",
+      "serverTimeout": 100,
+      "verbose": "silly"
+    }
+  }
+}

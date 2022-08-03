@@ -1,5 +1,9 @@
 /// <reference types="cypress" />
 
+Cypress.Screenshot.defaults({
+  screenshotOnRunFailure: false,
+});
+
 context.only("/api", () => {
   beforeEach(() => {
     cy.visit("http://0.0.0.0:1234/");
@@ -8,12 +12,18 @@ context.only("/api", () => {
   describe(`Accessing /api/headers`, () => {
     it(`should respond with valid body content`, () => {
       cy.request({ url: `http://0.0.0.0:1234/api/headers`, failOnStatusCode: false }).then((response) => {
-        console.log(response);
         const body = Object.keys(response.body);
         expect(response.status).to.eq(200);
         expect(body).to.include("x-ms-original-url");
         expect(body).to.include("x-ms-request-id");
         expect(body).to.include("x-swa-custom");
+      });
+    });
+    it("Should correctly set x-ms-original-url to the full request url", () => {
+      const HEADER_URL = "http://0.0.0.0:1234/api/headers";
+      cy.request({ url: HEADER_URL, failOnStatusCode: false }).then((response) => {
+        expect(response.status).to.eq(200);
+        expect(response.body["x-ms-original-url"]).to.equal(HEADER_URL);
       });
     });
   });
@@ -46,7 +56,7 @@ context.only("/api", () => {
 
       cy.request({ url: `http://0.0.0.0:1234/api/info`, failOnStatusCode: false }).then((response) => {
         expect(response.status).to.eq(200);
-        expect(response.body).to.eq('authorized');
+        expect(response.body).to.eq("authorized");
       });
     });
   });

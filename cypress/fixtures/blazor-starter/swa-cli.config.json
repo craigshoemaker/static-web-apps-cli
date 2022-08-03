@@ -1,0 +1,18 @@
+{
+  "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
+  "configurations": {
+    "blazor-starter": {
+      "appLocation": "Client",
+      "apiLocation": "Api",
+      "outputLocation": "output",
+      "appBuildCommand": "dotnet build",
+      "apiBuildCommand": "dotnet build",
+      "run": "dotnet watch run",
+      "devServerUrl": "http://localhost:8000",
+      "port": 1234,
+      "host": "0.0.0.0",
+      "devserverTimeout": 100,
+      "verbose": "silly"
+    }
+  }
+}
